@@ -1,6 +1,6 @@
-[submodule "lellama/backend/metal/metal-cpp"]
-	path = lellama/backend/metal/metal-cpp
+[submodule "legrad/backend/metal/metal-cpp"]
+	path = legrad/backend/metal/metal-cpp
 	url = https://github.com/bkaradzic/metal-cpp.git
-[submodule "lellama/backend/metal/metal-cpp-extension"]
-	path = lellama/backend/metal/metal-cpp-extension
+[submodule "legrad/backend/metal/metal-cpp-extension"]
+	path = legrad/backend/metal/metal-cpp-extension
 	url = https://gitlab.com/mark-grimes/metal-cpp-extensions.git
