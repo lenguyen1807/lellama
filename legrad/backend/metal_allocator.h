@@ -11,7 +11,7 @@
 
 namespace legrad::metal
 {
-class Allocator : public core::Allocator
+class MetalAllocator : public core::Allocator
 {
 public:
   struct Context
@@ -20,39 +20,37 @@ public:
     size_t real_size;
     MTL::Buffer* buffer;
     // We want to know the allocator that allocate this buffer
-    metal::Allocator* allocator;
+    metal::MetalAllocator* allocator;
   };
 
-  Allocator(MTL::Device* device)
+  MetalAllocator(MTL::Device* device)
       : core::Allocator()
       , device_(device)
   {
   }
 
-  virtual ~Allocator() {}
-  virtual void return_mem(Allocator::Context*) = 0;
+  virtual ~MetalAllocator() {}
 
 protected:
   MTL::Buffer* alloc_and_throw(size_t nbytes);
-  void free_buffer(MTL::Buffer* buf);
 
 protected:
   MTL::Device* device_;
 };
 
-class BucketAllocator : public metal::Allocator
+class MetalBucketAllocator : public metal::MetalAllocator
 {
 public:
-  BucketAllocator(MTL::Device* device)
-      : metal::Allocator(device)
+  MetalBucketAllocator(MTL::Device* device)
+      : metal::MetalAllocator(device)
   {
   }
 
-  ~BucketAllocator();
+  ~MetalBucketAllocator();
 
-  core::Buffer allocate(size_t bytes) override;
+  core::Buffer malloc(size_t bytes) override;
   static void deallocate(void*);
-  void return_mem(Allocator::Context*) override;
+  void free(void*) override;
 
 private:
   void free_cached();

@@ -7,7 +7,7 @@
 
 namespace legrad::metal
 {
-MTL::Buffer* Allocator::alloc_and_throw(size_t nbytes)
+MTL::Buffer* MetalAllocator::alloc_and_throw(size_t nbytes)
 {
   MTL::Buffer* ptr = device_->newBuffer(nbytes, MTL::ResourceStorageModeShared);
 
@@ -19,18 +19,13 @@ MTL::Buffer* Allocator::alloc_and_throw(size_t nbytes)
   return ptr;
 }
 
-void Allocator::free_buffer(MTL::Buffer* buf)
+MetalBucketAllocator::~MetalBucketAllocator()
 {
-  buf->release();
-}
-
-BucketAllocator::~BucketAllocator()
-{
-  LEGRAD_LOG_TRACE("Allocator destruct called", 0);
+  LEGRAD_LOG_TRACE("Allocator destructor called", 0);
   free_cached();
 }
 
-void BucketAllocator::free_cached()
+void MetalBucketAllocator::free_cached()
 {
   std::lock_guard<std::mutex> lock(mtx_);
   for (auto& [size, ptr] : pool_) {
@@ -38,12 +33,12 @@ void BucketAllocator::free_cached()
                   "Null buffer found in pool during free_cached", 0);
     LEGRAD_LOG_TRACE("Release buffer with pointer {} and size {}",
                      ptr->contents(), size);
-    free_buffer(ptr);
+    ptr->release();
   }
   pool_.clear();
 }
 
-size_t BucketAllocator::find_bucket(size_t nbytes)
+size_t MetalBucketAllocator::find_bucket(size_t nbytes)
 {
   // First round up current size to nearest bucket size
   size_t expected_size = 0;
@@ -56,16 +51,15 @@ size_t BucketAllocator::find_bucket(size_t nbytes)
   return expected_size;
 }
 
-core::Buffer BucketAllocator::allocate(size_t nbytes)
+core::Buffer MetalBucketAllocator::malloc(size_t nbytes)
 {
   std::lock_guard<std::mutex> lock(mtx_);
 
   MTL::Buffer* ptr = nullptr;
-  Allocator::Context* ctx = nullptr;
+  MetalAllocator::Context* ctx = nullptr;
 
   if (nbytes == 0) {
     LEGRAD_LOG_WARN("Allocator create buffer with 0 size", 0);
-    // Return an empty buffer - note the context is null, deleter is default
     return core::Buffer();
   }
 
@@ -88,14 +82,14 @@ core::Buffer BucketAllocator::allocate(size_t nbytes)
     LEGRAD_ASSERT(ptr != nullptr, "Data from Allocator pool cannot be null", 0);
     LEGRAD_LOG_TRACE("Reusing buffer from pool. Bucket size: {}",
                      expected_size);
-    ctx = new Allocator::Context{expected_size, nbytes, ptr, this};
+    ctx = new MetalAllocator::Context{expected_size, nbytes, ptr, this};
   } else {
     // --- Allocating new buffer ---
     LEGRAD_LOG_TRACE("Allocating new buffer. Requested: {}, Bucket size: {}",
                      nbytes, expected_size);
     try {
       ptr = alloc_and_throw(expected_size);
-      ctx = new Allocator::Context{expected_size, nbytes, ptr, this};
+      ctx = new MetalAllocator::Context{expected_size, nbytes, ptr, this};
     } catch (const std::exception& e) {
       LEGRAD_LOG_WARN(
           "Cannot allocate buffer ({}), freeing cache and retrying. Error: {}",
@@ -105,7 +99,7 @@ core::Buffer BucketAllocator::allocate(size_t nbytes)
       // Retry allocation
       try {
         ptr = alloc_and_throw(expected_size);
-        ctx = new Allocator::Context{expected_size, nbytes, ptr, this};
+        ctx = new MetalAllocator::Context{expected_size, nbytes, ptr, this};
       } catch (const std::exception& retry_e) {
         LEGRAD_LOG_ERR(
             "Failed to allocate buffer ({}) even after freeing cache. Error: "
@@ -119,26 +113,32 @@ core::Buffer BucketAllocator::allocate(size_t nbytes)
   // Return the Buffer, passing the Metal buffer's contents pointer,
   // the context pointer (which manages the Metal buffer lifetime),
   // and the static deallocate function.
-  return core::Buffer(ptr->contents(), ctx, BucketAllocator::deallocate);
+  return core::Buffer(ptr->contents(), ctx, MetalBucketAllocator::deallocate);
 }
 
-void BucketAllocator::deallocate(void* ctx)
+void MetalBucketAllocator::deallocate(void* ctx)
 {
   if (ctx == nullptr) {
     return;
   }
-  Allocator::Context* metal_ctx = static_cast<Allocator::Context*>(ctx);
+
+  MetalAllocator::Context* metal_ctx =
+      static_cast<MetalAllocator::Context*>(ctx);
+
   if (metal_ctx->allocator == nullptr) {
     // Note that we still try to delete the context of pointer
     delete metal_ctx;
     LEGRAD_THROW_ERROR(std::runtime_error,
                        "The context pointer has empty allocator", 0);
   }
-  metal_ctx->allocator->return_mem(metal_ctx);
+
+  LEGRAD_LOG_TRACE("Delete Buffer with pointer {} and context {}",
+                   metal_ctx->buffer->contents(), fmt::ptr(metal_ctx));
+  metal_ctx->allocator->free(metal_ctx);
   delete metal_ctx;
 }
 
-void BucketAllocator::return_mem(Allocator::Context* ctx)
+void MetalBucketAllocator::free(void* ctx)
 {
   std::lock_guard<std::mutex> loc(mtx_);
 
@@ -148,7 +148,9 @@ void BucketAllocator::return_mem(Allocator::Context* ctx)
     return;
   }
 
+  auto metal_ctx = static_cast<MetalAllocator::Context*>(ctx);
+
   // Return memory to pool
-  pool_.insert({ctx->bucket_size, ctx->buffer});
+  pool_.insert({metal_ctx->bucket_size, metal_ctx->buffer});
 }
 }  // namespace legrad::metal

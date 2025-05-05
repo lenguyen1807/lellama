@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "internal/func_cmp.h"
+#include "macros/log.h"
 
 namespace legrad::core
 {
@@ -34,6 +35,8 @@ public:
       : ptr_(ptr)
       , ctx_(ctx, std::move(deleter))
   {
+    LEGRAD_LOG_TRACE("Create buffer with pointer {} and context {}", ptr,
+                     fmt::ptr(ctx));
   }
 
   void clear()

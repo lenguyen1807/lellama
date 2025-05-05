@@ -39,7 +39,7 @@ Manager::Manager()
                        "Cannot create counter buffer because {}", msg);
   }
 
-  bucket_allocator_ = std::make_unique<BucketAllocator>(device_);
+  bucket_allocator_ = std::make_unique<MetalBucketAllocator>(device_);
 }
 
 Manager::~Manager()

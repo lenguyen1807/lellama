@@ -27,6 +27,8 @@ public:
 
   MTL::CommandQueue* cmd_queue() const { return cmd_queue_; }
 
+  core::Allocator* bucket_allocator() { return bucket_allocator_.get(); }
+
   const core::Allocator* bucket_allocator() const
   {
     return bucket_allocator_.get();
@@ -42,7 +44,7 @@ private:
   MTL::CounterSampleBuffer* counter_buffer_ = nullptr;
 
   // Allocator
-  std::unique_ptr<BucketAllocator> bucket_allocator_;
+  std::unique_ptr<MetalBucketAllocator> bucket_allocator_;
 };
 
 // https://developer.apple.com/documentation/metal/confirming-which-counters-and-counter-sets-a-gpu-supports?language=objc
